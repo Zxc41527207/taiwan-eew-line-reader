@@ -2,7 +2,7 @@
 
 A Node.js worker that listens for Taiwan EEW packets from the RPTeS RFEQ WebSocket and pushes new or updated reports to a LINE Official Account destination.
 
-The worker checks `HasEarthquake` before reading the `Earthquake` object, parses its `data` JSON string, and signs each polling request with the timestamp headers used by the website. Polling is sequential and defaults to one request every two seconds; `POLL_INTERVAL_MS` cannot be set below 2000.
+The worker listens for pushed RPtES RFEQ packets and parses `eew_tw` content. Duplicate reports are deduplicated by `id` and `report_num`.
 
 ## Run locally
 
@@ -16,7 +16,7 @@ The worker checks `HasEarthquake` before reading the `Earthquake` object, parses
 
 Create a Blueprint from this repository using `render.yaml`, or create a Background Worker with build command `npm install` and start command `npm start`. Set `LINE_CHANNEL_ACCESS_TOKEN` in the Render environment settings. Keep the worker running continuously to receive alerts.
 
-The in-memory duplicate cache prevents repeated alerts while the worker is running, but it does not survive a worker restart, so the current alert could be sent again after a restart.
+Successfully sent report keys are persisted in `DEDUPE_FILE` (default `/tmp/taiwan-eew-line-reader-dedupe.json`) so same-service restarts do not immediately resend old reports. The `/tmp` location should be changed to a Render Persistent Disk path for storage across instance rebuilds.
 
 ## Data note
 

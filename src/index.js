@@ -7,12 +7,14 @@ const {
   getEventKey,
   parseTaiwanEew
 } = require('./eew');
+const { loadSentEvents, saveSentEvents } = require('./dedupe-store');
 
 const websocketUrl = process.env.WEBSOCKET_URL || 'wss://rptes.com:443/ws/';
 const maxReconnectDelayMs = 30_000;
 const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 const maxRememberedEvents = 1_000;
-const sentEvents = new Set();
+const dedupeFile = process.env.DEDUPE_FILE || '/tmp/taiwan-eew-line-reader-dedupe.json';
+const sentEvents = new Set(loadSentEvents(dedupeFile, maxRememberedEvents));
 const eventsBeingSent = new Set();
 
 function validateConfig() {
@@ -63,10 +65,15 @@ async function pushLineMessage(text) {
 
 function rememberEvent(key) {
   sentEvents.add(key);
-  if (sentEvents.size > maxRememberedEvents) {
-    const oldestKey = sentEvents.values().next().value;
-    sentEvents.delete(oldestKey);
+
+  let orderedKeys = Array.from(sentEvents);
+  if (orderedKeys.length > maxRememberedEvents) {
+    orderedKeys = orderedKeys.slice(-maxRememberedEvents);
+    sentEvents.clear();
+    orderedKeys.forEach(item => sentEvents.add(item));
   }
+
+  saveSentEvents(dedupeFile, orderedKeys);
 }
 
 async function handleMessage(rawData) {
