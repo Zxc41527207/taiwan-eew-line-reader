@@ -9,3 +9,9 @@ services:
         value: wss://rptes.com:443/ws/
       - key: LINE_CHANNEL_ACCESS_TOKEN
         sync: false
+      - key: LINE_BROADCAST
+        value: "false"
+      - key: LINE_GROUP_FILE
+        value: /tmp/taiwan-eew-line-reader-groups.json
+      - key: DEDUPE_FILE
+        value: /tmp/taiwan-eew-line-reader-dedupe.json

@@ -8,13 +8,17 @@ const {
   parseTaiwanEew
 } = require('./eew');
 const { loadSentEvents, saveSentEvents } = require('./dedupe-store');
+const { loadGroupIds, saveGroupIds } = require('./group-store');
 
 const websocketUrl = process.env.WEBSOCKET_URL || 'wss://rptes.com:443/ws/';
 const maxReconnectDelayMs = 30_000;
 const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 const maxRememberedEvents = 1_000;
 const dedupeFile = process.env.DEDUPE_FILE || '/tmp/taiwan-eew-line-reader-dedupe.json';
+const groupFile = process.env.LINE_GROUP_FILE || '/tmp/taiwan-eew-line-reader-groups.json';
+const lineBroadcast = process.env.LINE_BROADCAST === 'true';
 const sentEvents = new Set(loadSentEvents(dedupeFile, maxRememberedEvents));
+const groupIds = new Set(loadGroupIds(groupFile));
 const eventsBeingSent = new Set();
 
 function validateConfig() {
@@ -26,20 +30,18 @@ function validateConfig() {
   }
 }
 
-async function pushLineMessage(text) {
+async function sendWithRetry(url, body) {
   let lastError;
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      const response = await fetch('https://api.line.me/v2/bot/message/broadcast', {
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${channelAccessToken}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          messages: [{ type: 'text', text }]
-        }),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(10_000)
       });
 
@@ -61,6 +63,23 @@ async function pushLineMessage(text) {
   }
 
   throw lastError;
+}
+
+async function pushLineMessage(text) {
+  const messageBody = { messages: [{ type: 'text', text }] };
+
+  if (groupIds.size > 0) {
+    for (const groupId of groupIds) {
+      await sendWithRetry('https://api.line.me/v2/bot/message/push', {
+        ...messageBody,
+        to: groupId
+      });
+    }
+  }
+
+  if (lineBroadcast) {
+    await sendWithRetry('https://api.line.me/v2/bot/message/broadcast', messageBody);
+  }
 }
 
 function rememberEvent(key) {
@@ -120,8 +139,14 @@ function startWebhookServer() {
         try {
           const payload = JSON.parse(body);
           for (const event of payload.events || []) {
-            if (event.source?.type === 'group') {
-              console.log(`LINE group ID: ${event.source.groupId}`);
+            if (event.type === 'join' && event.source?.type === 'group' && event.source.groupId) {
+              groupIds.add(event.source.groupId);
+              saveGroupIds(groupFile, Array.from(groupIds));
+              console.log(`LINE group joined: ${event.source.groupId}`);
+            } else if (event.type === 'leave' && event.source?.type === 'group' && event.source.groupId) {
+              groupIds.delete(event.source.groupId);
+              saveGroupIds(groupFile, Array.from(groupIds));
+              console.log(`LINE group left: ${event.source.groupId}`);
             }
           }
         } catch (error) {

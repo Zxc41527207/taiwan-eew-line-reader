@@ -10,7 +10,7 @@ The worker listens for pushed RPtES RFEQ packets and parses `eew_tw` content. Du
 2. Copy `.env.example` to `.env` and set `LINE_CHANNEL_ACCESS_TOKEN` for a Messaging API Channel enabled for broadcast.
 3. Run `npm install`, then `npm test` and `npm start`.
 
-`LINE_CHANNEL_ACCESS_TOKEN` must belong to a Messaging API Channel with broadcast enabled. The service sends one broadcast message to recipients eligible for the Official Account. Broadcast does not guarantee delivery to every add-friend contact; LINE plan and Messaging API policies apply. Keep `.env` private and never commit it.
+`LINE_CHANNEL_ACCESS_TOKEN` must belong to a Messaging API Channel with broadcast enabled. The service saves group IDs received through join webhooks and pushes alerts to those groups. Set `LINE_BROADCAST=false` to disable all-friend broadcast while retaining group push. Keep `.env` private and never commit it.
 
 ## Deploy to Render
 
