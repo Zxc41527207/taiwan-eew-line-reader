@@ -2,7 +2,7 @@
   "name": "taiwan-eew-line-reader",
   "version": "1.0.0",
   "private": true,
-  "description": "Forward authorized Taiwan EEW WebSocket messages to LINE Messaging API.",
+  "description": "Forward TWEarthquake EEW API alerts to the LINE Messaging API.",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
@@ -12,7 +12,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "dotenv": "^16.4.7",
-    "ws": "^8.18.3"
+    "dotenv": "^16.4.7"
   }
 }
