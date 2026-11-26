@@ -1,0 +1,13 @@
+services:
+  - type: worker
+    name: taiwan-eew-line-reader
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: WEBSOCKET_URL
+        value: wss://rptes.com:443/ws/
+      - key: LINE_CHANNEL_ACCESS_TOKEN
+        sync: false
+      - key: LINE_TO
+        sync: false
