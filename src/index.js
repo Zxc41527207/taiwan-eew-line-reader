@@ -240,6 +240,9 @@ function startReader() {
         if (!response.ok) {
           if (response.status === 403 || response.status === 429) deniedCount += 1;
           const body = await response.text();
+          if (body.includes('Just a moment') || body.includes('challenges.cloudflare.com')) {
+            throw new Error(`EEW API returned Cloudflare challenge (${response.status})`);
+          }
           throw new Error(`EEW API returned ${response.status}: ${body.slice(0, 500)}`);
         }
         deniedCount = 0;
@@ -250,7 +253,7 @@ function startReader() {
 
       let delay = Math.max(0, pollIntervalMs - (Date.now() - requestStartedAt));
       if (deniedCount > 0) {
-        const backoffSeconds = Math.min(30, 2 * 2 ** Math.min(deniedCount - 1, 4));
+        const backoffSeconds = Math.min(300, 2 * 2 ** Math.min(deniedCount - 1, 8));
         delay = backoffSeconds * 1_000;
       }
       if (!stopping && delay > 0) {
