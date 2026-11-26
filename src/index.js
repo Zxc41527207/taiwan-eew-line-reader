@@ -203,12 +203,26 @@ function startReader() {
 
   const poll = async () => {
     let apiUrl;
+    let fallbackMode = false;
+    let lastInitializationRetryAt = 0;
     console.log(`Using TWEarthquake API for ${locationCode}; polling every ${pollIntervalMs} ms`);
 
     while (!stopping) {
       const requestStartedAt = Date.now();
       try {
-        if (!apiUrl) apiUrl = await fetchInitializationUrl();
+        if (!apiUrl) {
+          apiUrl = await fetchInitializationUrl();
+          fallbackMode = apiUrl === fallbackApiUrl;
+          if (fallbackMode) lastInitializationRetryAt = Date.now();
+        } else if (fallbackMode && Date.now() - lastInitializationRetryAt >= 60_000) {
+          const initializedUrl = await fetchInitializationUrl();
+          lastInitializationRetryAt = Date.now();
+          if (initializedUrl !== fallbackApiUrl) {
+            apiUrl = initializedUrl;
+            fallbackMode = false;
+            console.log(`TWEarthquake initialization recovered; using ${apiUrl}`);
+          }
+        }
 
         const response = await fetch(`${apiUrl}/${encodeURIComponent(locationCode)}`, {
           headers: createApiHeaders(),
@@ -221,9 +235,6 @@ function startReader() {
       }
 
       let delay = Math.max(0, pollIntervalMs - (Date.now() - requestStartedAt));
-      if (apiUrl === undefined && Date.now() - requestStartedAt < 5_000) {
-        delay = Math.min(pollIntervalMs * 15, 30_000);
-      }
       if (!stopping && delay > 0) {
         await new Promise(resolve => setTimeout(resolve, delay));
       }
