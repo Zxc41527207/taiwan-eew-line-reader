@@ -103,9 +103,20 @@ async function handleApiResponse(packet) {
 
 async function fetchInitializationUrl() {
   if (process.env.TWEARTHQUAKE_API_URL) {
-    const configuredUrl = process.env.TWEARTHQUAKE_API_URL.replace(/\/+$/, '');
-    console.log(`Using configured TWEarthquake EEW URL: ${configuredUrl}`);
-    return configuredUrl;
+    const rawConfiguredUrl = process.env.TWEARTHQUAKE_API_URL.trim();
+    const configuredUrl = (rawConfiguredUrl.includes('=')
+      ? rawConfiguredUrl.slice(rawConfiguredUrl.indexOf('=') + 1)
+      : rawConfiguredUrl
+    ).trim().replace(/\/+$/, '');
+
+    try {
+      const parsedUrl = new URL(configuredUrl);
+      if (parsedUrl.protocol !== 'https:') throw new Error('must use https');
+      console.log(`Using configured TWEarthquake EEW URL: ${parsedUrl.toString().replace(/\/+$/, '')}`);
+      return parsedUrl.toString().replace(/\/+$/, '');
+    } catch (error) {
+      console.error(`Invalid TWEARTHQUAKE_API_URL: ${configuredUrl} (${error.message})`);
+    }
   }
 
   let response;
