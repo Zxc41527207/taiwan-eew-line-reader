@@ -74,9 +74,12 @@ function parseTaiwanEew(packet) {
 }
 
 function getEventKey(eew) {
+  if (Number.isFinite(eew.reportNumber)) {
+    return `${eew.id}:${eew.reportNumber}`;
+  }
+
   return [
     eew.id,
-    eew.reportNumber,
     eew.magnitude,
     eew.maxLevel,
     eew.localLevel,

@@ -75,6 +75,7 @@ test('parses RPtES WebSocket packets and deduplicates reports', () => {
   const firstReport = parseTaiwanEew(packet);
   assert.equal(firstReport.id, 'CWA-EEW1150086');
   assert.equal(firstReport.reportNumber, 4);
+  assert.equal(getEventKey(firstReport), 'CWA-EEW1150086:4');
   assert.equal(getEventKey(firstReport), getEventKey(parseTaiwanEew(packet)));
 
   const nextReport = parseTaiwanEew({
