@@ -9,6 +9,7 @@ const {
 } = require('./eew');
 
 const initializationUrl = process.env.INITIALIZATION_URL || 'https://twearthquake.com/api/web/initialization';
+const fallbackApiUrl = process.env.TWEARTHQUAKE_API_URL || 'https://eew.twearthquake.com/eew';
 const locationCode = process.env.EEW_LOCATION_CODE || 'Taipei';
 const pollIntervalMs = Number(process.env.POLL_INTERVAL_MS) || 2_000;
 const requestTimeoutMs = 1_500;
@@ -101,7 +102,9 @@ async function handleApiResponse(packet) {
 }
 
 async function fetchInitializationUrl() {
-  const response = await fetch(initializationUrl, {
+  let response;
+  try {
+    response = await fetch(initializationUrl, {
     headers: {
       Accept: 'application/json,text/plain,*/*',
       'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
@@ -111,15 +114,22 @@ async function fetchInitializationUrl() {
       'Sec-Fetch-Mode': 'cors',
       'Sec-Fetch-Site': 'same-origin'
     },
-    signal: AbortSignal.timeout(10_000)
-  });
+      signal: AbortSignal.timeout(10_000)
+    });
+  } catch (error) {
+    console.warn(`Initialization API unavailable: ${error.message}; using fallback EEW URL`);
+    return fallbackApiUrl;
+  }
+
   if (!response.ok) {
-    throw new Error(`Initialization API returned ${response.status}`);
+    console.warn(`Initialization API returned ${response.status}; using fallback EEW URL`);
+    return fallbackApiUrl;
   }
 
   const initialization = await response.json();
   if (typeof initialization.url !== 'string') {
-    throw new Error('Initialization API did not provide an EEW URL');
+    console.warn('Initialization API did not provide an EEW URL; using fallback EEW URL');
+    return fallbackApiUrl;
   }
 
   const apiUrl = new URL(initialization.url);
