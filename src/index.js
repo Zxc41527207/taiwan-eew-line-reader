@@ -102,17 +102,17 @@ async function handleApiResponse(packet) {
 }
 
 async function fetchInitializationUrl() {
+  if (process.env.TWEARTHQUAKE_API_URL) {
+    const configuredUrl = process.env.TWEARTHQUAKE_API_URL.replace(/\/+$/, '');
+    console.log(`Using configured TWEarthquake EEW URL: ${configuredUrl}`);
+    return configuredUrl;
+  }
+
   let response;
   try {
     response = await fetch(initializationUrl, {
     headers: {
-      Accept: 'application/json,text/plain,*/*',
-      'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      Referer: 'https://twearthquake.com/',
-      'Sec-Fetch-Dest': 'empty',
-      'Sec-Fetch-Mode': 'cors',
-      'Sec-Fetch-Site': 'same-origin'
+      Accept: 'application/json'
     },
       signal: AbortSignal.timeout(10_000)
     });
@@ -143,10 +143,7 @@ function createApiHeaders() {
   const timestamp = Math.floor(Date.now() / 1_000).toString();
   const signature = createHmac('sha256', signatureKey).update(timestamp).digest('hex');
   return {
-    Accept: 'application/json,text/plain,*/*',
-    'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    Referer: 'https://twearthquake.com/',
+    Accept: 'application/json',
     'TWEarthquake-Timestamp': timestamp,
     'TWEarthquake-Token-Sign': signature
   };
@@ -231,7 +228,8 @@ function startReader() {
         });
         if (!response.ok) {
           if (response.status === 403 || response.status === 429) deniedCount += 1;
-          throw new Error(`EEW API returned ${response.status}`);
+          const body = await response.text();
+          throw new Error(`EEW API returned ${response.status}: ${body.slice(0, 500)}`);
         }
         deniedCount = 0;
         await handleApiResponse(await response.json());
