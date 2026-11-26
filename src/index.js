@@ -102,6 +102,12 @@ async function handleApiResponse(packet) {
 
 async function fetchInitializationUrl() {
   const response = await fetch(initializationUrl, {
+    headers: {
+      Accept: 'application/json,text/plain,*/*',
+      'User-Agent': 'Mozilla/5.0 (compatible; Taiwan-EEW-Line-Reader/1.0)',
+      Referer: 'https://twearthquake.com/',
+      Origin: 'https://twearthquake.com'
+    },
     signal: AbortSignal.timeout(10_000)
   });
   if (!response.ok) {
@@ -124,6 +130,9 @@ function createApiHeaders() {
   const timestamp = Math.floor(Date.now() / 1_000).toString();
   const signature = createHmac('sha256', signatureKey).update(timestamp).digest('hex');
   return {
+    Accept: 'application/json,text/plain,*/*',
+    'User-Agent': 'Mozilla/5.0 (compatible; Taiwan-EEW-Line-Reader/1.0)',
+    Referer: 'https://twearthquake.com/',
     'TWEarthquake-Timestamp': timestamp,
     'TWEarthquake-Token-Sign': signature
   };
