@@ -16,7 +16,7 @@ The worker listens for pushed RPtES RFEQ packets and parses `eew_tw` content. Du
 
 Create a Blueprint from this repository using `render.yaml`, or create a Background Worker with build command `npm install` and start command `npm start`. Set `LINE_CHANNEL_ACCESS_TOKEN` in the Render environment settings. Keep the worker running continuously to receive alerts.
 
-Successfully sent report keys are persisted in `DEDUPE_FILE` (default `/tmp/taiwan-eew-line-reader-dedupe.json`) so same-service restarts do not immediately resend old reports. The `/tmp` location should be changed to a Render Persistent Disk path for storage across instance rebuilds.
+Successfully sent report keys are persisted in `DEDUPE_FILE` (default `/var/data/dedupe.json`); joined LINE groups are persisted in `LINE_GROUP_FILE` (default `/var/data/groups.json`). The Render Blueprint mounts a Persistent Disk at `/var/data` so state survives service rebuilds.
 
 ## Data note
 

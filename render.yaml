@@ -12,6 +12,10 @@ services:
       - key: LINE_BROADCAST
         value: "false"
       - key: LINE_GROUP_FILE
-        value: /tmp/taiwan-eew-line-reader-groups.json
+        value: /var/data/groups.json
       - key: DEDUPE_FILE
-        value: /tmp/taiwan-eew-line-reader-dedupe.json
+        value: /var/data/dedupe.json
+    disk:
+      name: eew-state
+      mountPath: /var/data
+      sizeGB: 1
