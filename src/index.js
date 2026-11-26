@@ -1,19 +1,15 @@
 require('dotenv').config();
 
 const http = require('http');
-const { createHmac } = require('crypto');
+const { WebSocket } = require('ws');
 const {
   formatLineMessage,
   getEventKey,
   parseTaiwanEew
 } = require('./eew');
 
-const initializationUrl = process.env.INITIALIZATION_URL || 'https://twearthquake.com/api/web/initialization';
-const fallbackApiUrl = process.env.TWEARTHQUAKE_API_URL || 'https://eew.twearthquake.com/eew';
-const locationCode = process.env.EEW_LOCATION_CODE || 'Taipei';
-const pollIntervalMs = Number(process.env.POLL_INTERVAL_MS) || 2_000;
-const requestTimeoutMs = 1_500;
-const signatureKey = 'Copyrights-2024-2025,-Chang-Yu-Hsi.-All-rights-reserved.';
+const websocketUrl = process.env.WEBSOCKET_URL || 'wss://rptes.com:443/ws/';
+const maxReconnectDelayMs = 30_000;
 const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 const lineTo = process.env.LINE_TO;
 const maxRememberedEvents = 1_000;
@@ -24,15 +20,9 @@ function validateConfig() {
   if (!channelAccessToken) throw new Error('LINE_CHANNEL_ACCESS_TOKEN is required');
   if (!lineTo) throw new Error('LINE_TO is required');
 
-  const parsedUrl = new URL(initializationUrl);
-  if (parsedUrl.protocol !== 'https:') {
-    throw new Error('INITIALIZATION_URL must use https://');
-  }
-  if (!/^[A-Za-z0-9_-]+$/.test(locationCode)) {
-    throw new Error('EEW_LOCATION_CODE must contain only letters, numbers, underscores, or hyphens');
-  }
-  if (!Number.isFinite(pollIntervalMs) || pollIntervalMs < 2_000) {
-    throw new Error('POLL_INTERVAL_MS must be at least 2000');
+  const parsedUrl = new URL(websocketUrl);
+  if (parsedUrl.protocol !== 'wss:') {
+    throw new Error('WEBSOCKET_URL must use wss://');
   }
 }
 
@@ -82,7 +72,15 @@ function rememberEvent(key) {
   }
 }
 
-async function handleApiResponse(packet) {
+async function handleMessage(rawData) {
+  let packet;
+  try {
+    packet = JSON.parse(rawData.toString());
+  } catch {
+    console.warn('Skipped a non-JSON WebSocket message');
+    return;
+  }
+
   const eew = parseTaiwanEew(packet);
   if (!eew) return;
 
@@ -99,65 +97,6 @@ async function handleApiResponse(packet) {
   } finally {
     eventsBeingSent.delete(eventKey);
   }
-}
-
-async function fetchInitializationUrl() {
-  if (process.env.TWEARTHQUAKE_API_URL) {
-    const rawConfiguredUrl = process.env.TWEARTHQUAKE_API_URL.trim();
-    const configuredUrl = (rawConfiguredUrl.includes('=')
-      ? rawConfiguredUrl.slice(rawConfiguredUrl.indexOf('=') + 1)
-      : rawConfiguredUrl
-    ).trim().replace(/\/+$/, '');
-
-    try {
-      const parsedUrl = new URL(configuredUrl);
-      if (parsedUrl.protocol !== 'https:') throw new Error('must use https');
-      console.log(`Using configured TWEarthquake EEW URL: ${parsedUrl.toString().replace(/\/+$/, '')}`);
-      return parsedUrl.toString().replace(/\/+$/, '');
-    } catch (error) {
-      console.error(`Invalid TWEARTHQUAKE_API_URL: ${configuredUrl} (${error.message})`);
-    }
-  }
-
-  let response;
-  try {
-    response = await fetch(initializationUrl, {
-    headers: {
-      Accept: 'application/json'
-    },
-      signal: AbortSignal.timeout(10_000)
-    });
-  } catch (error) {
-    console.warn(`Initialization API unavailable: ${error.message}; using fallback EEW URL`);
-    return fallbackApiUrl;
-  }
-
-  if (!response.ok) {
-    console.warn(`Initialization API returned ${response.status}; using fallback EEW URL`);
-    return fallbackApiUrl;
-  }
-
-  const initialization = await response.json();
-  if (typeof initialization.url !== 'string') {
-    console.warn('Initialization API did not provide an EEW URL; using fallback EEW URL');
-    return fallbackApiUrl;
-  }
-
-  const apiUrl = new URL(initialization.url);
-  if (apiUrl.protocol !== 'https:') {
-    throw new Error('Initialization API returned a non-HTTPS EEW URL');
-  }
-  return apiUrl.toString().replace(/\/+$/, '');
-}
-
-function createApiHeaders() {
-  const timestamp = Math.floor(Date.now() / 1_000).toString();
-  const signature = createHmac('sha256', signatureKey).update(timestamp).digest('hex');
-  return {
-    Accept: 'application/json',
-    'TWEarthquake-Timestamp': timestamp,
-    'TWEarthquake-Token-Sign': signature
-  };
 }
 
 function startWebhookServer() {
@@ -200,75 +139,53 @@ function startWebhookServer() {
 }
 
 function startReader() {
+  let reconnectDelayMs = 1_000;
   let stopping = false;
+  let reconnectTimer;
+  let activeSocket;
+
   const shutdown = () => {
     stopping = true;
+    clearTimeout(reconnectTimer);
+    activeSocket?.close(1000, 'Worker shutting down');
     console.log('Shutting down');
   };
 
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
 
-  const poll = async () => {
-    let apiUrl;
-    let fallbackMode = false;
-    let lastInitializationRetryAt = 0;
-    let deniedCount = 0;
-    let cloudflareChallenge = false;
-    console.log(`Using TWEarthquake API for ${locationCode}; polling every ${pollIntervalMs} ms`);
+  const connect = () => {
+    if (stopping) return;
 
-    while (!stopping) {
-      const requestStartedAt = Date.now();
-      try {
-        if (!apiUrl) {
-          apiUrl = await fetchInitializationUrl();
-          fallbackMode = apiUrl === fallbackApiUrl;
-          if (fallbackMode) lastInitializationRetryAt = Date.now();
-        } else if (fallbackMode && Date.now() - lastInitializationRetryAt >= 60_000) {
-          const initializedUrl = await fetchInitializationUrl();
-          lastInitializationRetryAt = Date.now();
-          if (initializedUrl !== fallbackApiUrl) {
-            apiUrl = initializedUrl;
-            fallbackMode = false;
-            console.log(`TWEarthquake initialization recovered; using ${apiUrl}`);
-          }
-        }
+    console.log(`Connecting to ${websocketUrl}`);
+    const socket = new WebSocket(websocketUrl);
+    activeSocket = socket;
 
-        const response = await fetch(`${apiUrl}/${encodeURIComponent(locationCode)}`, {
-          headers: createApiHeaders(),
-          signal: AbortSignal.timeout(requestTimeoutMs)
-        });
-        if (!response.ok) {
-          if (response.status === 403 || response.status === 429) deniedCount += 1;
-          const body = await response.text();
-          if (body.includes('Just a moment') || body.includes('challenges.cloudflare.com')) {
-            cloudflareChallenge = true;
-            throw new Error(`EEW API returned Cloudflare challenge (${response.status})`);
-          }
-          cloudflareChallenge = false;
-          throw new Error(`EEW API returned ${response.status}: ${body.slice(0, 500)}`);
-        }
-        deniedCount = 0;
-        cloudflareChallenge = false;
-        await handleApiResponse(await response.json());
-      } catch (error) {
-        console.error('TWEarthquake polling error:', error.message);
-      }
+    socket.on('open', () => {
+      reconnectDelayMs = 1_000;
+      console.log('WebSocket connected; waiting for pushed messages');
+    });
 
-      let delay = Math.max(0, pollIntervalMs - (Date.now() - requestStartedAt));
-      if (cloudflareChallenge) {
-        delay = 300_000;
-      } else if (deniedCount > 0) {
-        const backoffSeconds = Math.min(300, 2 * 2 ** Math.min(deniedCount - 1, 8));
-        delay = backoffSeconds * 1_000;
-      }
-      if (!stopping && delay > 0) {
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
+    socket.on('message', data => {
+      void handleMessage(data);
+    });
+
+    socket.on('error', error => {
+      console.error('WebSocket error:', error.message);
+    });
+
+    socket.on('close', (code, reason) => {
+      console.warn(`WebSocket closed (${code}): ${reason.toString() || 'no reason'}`);
+      if (stopping) return;
+
+      const delay = reconnectDelayMs;
+      reconnectDelayMs = Math.min(reconnectDelayMs * 2, maxReconnectDelayMs);
+      console.log(`Reconnecting in ${delay} ms`);
+      reconnectTimer = setTimeout(connect, delay);
+    });
   };
 
-  void poll();
+  connect();
 }
 
 try {

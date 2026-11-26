@@ -54,7 +54,37 @@ test('requires the HasEarthquake flag and valid EEW fields', () => {
   }), null);
 });
 
-test('dedupe key distinguishes updates to the same event', () => {
+test('parses RPtES WebSocket packets and deduplicates reports', () => {
+  const packet = {
+    type: 'eew_tw',
+    content: {
+      type: 'TWEEW',
+      time: 1795596438000,
+      center: {
+        lon: 121.43,
+        lat: 22,
+        depth: 10,
+        cname: '臺灣東南部海域'
+      },
+      scale: 5.7,
+      report_num: 4,
+      id: 'CWA-EEW1150086'
+    }
+  };
+
+  const firstReport = parseTaiwanEew(packet);
+  assert.equal(firstReport.id, 'CWA-EEW1150086');
+  assert.equal(firstReport.reportNumber, 4);
+  assert.equal(getEventKey(firstReport), getEventKey(parseTaiwanEew(packet)));
+
+  const nextReport = parseTaiwanEew({
+    ...packet,
+    content: { ...packet.content, report_num: 5 }
+  });
+  assert.notEqual(getEventKey(firstReport), getEventKey(nextReport));
+});
+
+test('dedupe key distinguishes updates to the same TWEarthquake event', () => {
   const firstReport = parseTaiwanEew(samplePacket);
   const nextReport = { ...firstReport, arrivalSeconds: 20 };
 

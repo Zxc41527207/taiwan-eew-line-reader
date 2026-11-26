@@ -1,6 +1,6 @@
 # Taiwan EEW LINE Reader
 
-A Node.js worker that reads the TWEarthquake initialization API, polls its returned EEW endpoint for a configured location, and pushes new or updated EEW alerts to a LINE Official Account destination.
+A Node.js worker that listens for Taiwan EEW packets from the RPTeS RFEQ WebSocket and pushes new or updated reports to a LINE Official Account destination.
 
 The worker checks `HasEarthquake` before reading the `Earthquake` object, parses its `data` JSON string, and signs each polling request with the timestamp headers used by the website. Polling is sequential and defaults to one request every two seconds; `POLL_INTERVAL_MS` cannot be set below 2000.
 

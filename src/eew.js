@@ -1,5 +1,37 @@
 function parseTaiwanEew(packet) {
-  if (!packet || packet.HasEarthquake !== true) return null;
+  if (!packet) return null;
+
+  if (packet.type === 'eew_tw') {
+    const content = packet.content;
+    if (!content || content.type !== 'TWEEW') return null;
+
+    const center = content.center;
+    if (
+      !center ||
+      typeof content.id !== 'string' ||
+      !Number.isFinite(content.time) ||
+      !Number.isFinite(content.report_num) ||
+      !Number.isFinite(content.scale) ||
+      !Number.isFinite(center.lon) ||
+      !Number.isFinite(center.lat) ||
+      !Number.isFinite(center.depth)
+    ) return null;
+
+    return {
+      id: content.id,
+      reportNumber: content.report_num,
+      magnitude: content.scale,
+      time: content.time,
+      longitude: center.lon,
+      latitude: center.lat,
+      depthKm: center.depth,
+      location: typeof center.cname === 'string' ? center.cname : '位置未提供',
+      isDrill: false,
+      regionalData: {}
+    };
+  }
+
+  if (packet.HasEarthquake !== true) return null;
 
   const content = packet.Earthquake;
   if (
@@ -94,7 +126,7 @@ function formatLineMessage(eew) {
     `所在地預估震度：${intensityNames[eew.localLevel] || eew.localLevel || '未提供'}${eew.arrivalSeconds !== undefined ? `，約 ${eew.arrivalSeconds} 秒後抵達` : ''}`,
     `震央：${eew.latitude}°N, ${eew.longitude}°E`,
     `編號：${eew.id}`,
-    '資料來源：TWEarthquake；地震資訊請以中央氣象署發布為準。'
+    '資料來源：RPTeS RFEQ；地震資訊請以中央氣象署發布為準。'
   ].join('\n');
 }
 
