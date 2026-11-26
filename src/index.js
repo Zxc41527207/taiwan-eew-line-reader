@@ -214,6 +214,7 @@ function startReader() {
     let fallbackMode = false;
     let lastInitializationRetryAt = 0;
     let deniedCount = 0;
+    let cloudflareChallenge = false;
     console.log(`Using TWEarthquake API for ${locationCode}; polling every ${pollIntervalMs} ms`);
 
     while (!stopping) {
@@ -241,18 +242,23 @@ function startReader() {
           if (response.status === 403 || response.status === 429) deniedCount += 1;
           const body = await response.text();
           if (body.includes('Just a moment') || body.includes('challenges.cloudflare.com')) {
+            cloudflareChallenge = true;
             throw new Error(`EEW API returned Cloudflare challenge (${response.status})`);
           }
+          cloudflareChallenge = false;
           throw new Error(`EEW API returned ${response.status}: ${body.slice(0, 500)}`);
         }
         deniedCount = 0;
+        cloudflareChallenge = false;
         await handleApiResponse(await response.json());
       } catch (error) {
         console.error('TWEarthquake polling error:', error.message);
       }
 
       let delay = Math.max(0, pollIntervalMs - (Date.now() - requestStartedAt));
-      if (deniedCount > 0) {
+      if (cloudflareChallenge) {
+        delay = 300_000;
+      } else if (deniedCount > 0) {
         const backoffSeconds = Math.min(300, 2 * 2 ** Math.min(deniedCount - 1, 8));
         delay = backoffSeconds * 1_000;
       }
