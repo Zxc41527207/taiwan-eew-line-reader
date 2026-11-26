@@ -104,9 +104,12 @@ async function fetchInitializationUrl() {
   const response = await fetch(initializationUrl, {
     headers: {
       Accept: 'application/json,text/plain,*/*',
-      'User-Agent': 'Mozilla/5.0 (compatible; Taiwan-EEW-Line-Reader/1.0)',
+      'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
       Referer: 'https://twearthquake.com/',
-      Origin: 'https://twearthquake.com'
+      'Sec-Fetch-Dest': 'empty',
+      'Sec-Fetch-Mode': 'cors',
+      'Sec-Fetch-Site': 'same-origin'
     },
     signal: AbortSignal.timeout(10_000)
   });
@@ -131,7 +134,8 @@ function createApiHeaders() {
   const signature = createHmac('sha256', signatureKey).update(timestamp).digest('hex');
   return {
     Accept: 'application/json,text/plain,*/*',
-    'User-Agent': 'Mozilla/5.0 (compatible; Taiwan-EEW-Line-Reader/1.0)',
+    'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
     Referer: 'https://twearthquake.com/',
     'TWEarthquake-Timestamp': timestamp,
     'TWEarthquake-Token-Sign': signature
@@ -206,7 +210,10 @@ function startReader() {
         console.error('TWEarthquake polling error:', error.message);
       }
 
-      const delay = Math.max(0, pollIntervalMs - (Date.now() - requestStartedAt));
+      let delay = Math.max(0, pollIntervalMs - (Date.now() - requestStartedAt));
+      if (apiUrl === undefined && Date.now() - requestStartedAt < 5_000) {
+        delay = Math.min(pollIntervalMs * 15, 30_000);
+      }
       if (!stopping && delay > 0) {
         await new Promise(resolve => setTimeout(resolve, delay));
       }
