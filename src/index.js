@@ -67,6 +67,7 @@ async function sendWithRetry(url, body) {
 
 async function pushLineMessage(text) {
   const messageBody = { messages: [{ type: 'text', text }] };
+  let delivered = false;
 
   if (groupIds.size > 0) {
     for (const groupId of groupIds) {
@@ -74,11 +75,17 @@ async function pushLineMessage(text) {
         ...messageBody,
         to: groupId
       });
+      delivered = true;
     }
   }
 
   if (lineBroadcast) {
     await sendWithRetry('https://api.line.me/v2/bot/message/broadcast', messageBody);
+    delivered = true;
+  }
+
+  if (!delivered) {
+    throw new Error('No LINE group targets and broadcast is disabled');
   }
 }
 
