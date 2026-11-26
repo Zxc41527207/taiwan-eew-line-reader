@@ -9,6 +9,7 @@ const {
 } = require('./eew');
 const { loadSentEvents, saveSentEvents } = require('./dedupe-store');
 const { loadGroupIds, saveGroupIds } = require('./group-store');
+const postgresStore = require('./postgres-store');
 
 const websocketUrl = process.env.WEBSOCKET_URL || 'wss://rptes.com:443/ws/';
 const maxReconnectDelayMs = 30_000;
@@ -115,12 +116,19 @@ async function handleMessage(rawData) {
   if (!eew) return;
 
   const eventKey = getEventKey(eew);
-  if (sentEvents.has(eventKey) || eventsBeingSent.has(eventKey)) return;
+  if (eventsBeingSent.has(eventKey)) return;
+
+  let alreadySent = sentEvents.has(eventKey);
+  if (!alreadySent && process.env.DATABASE_URL) {
+    alreadySent = await postgresStore.hasSentEvent(eventKey);
+  }
+  if (alreadySent) return;
 
   eventsBeingSent.add(eventKey);
   try {
     await pushLineMessage(formatLineMessage(eew));
     rememberEvent(eventKey);
+    if (process.env.DATABASE_URL) await postgresStore.rememberSentEvent(eventKey);
     console.log(`LINE alert sent: ${eventKey}`);
   } catch (error) {
     console.error(`Failed to send LINE alert ${eventKey}:`, error.message);
@@ -149,10 +157,12 @@ function startWebhookServer() {
             if (event.type === 'join' && event.source?.type === 'group' && event.source.groupId) {
               groupIds.add(event.source.groupId);
               saveGroupIds(groupFile, Array.from(groupIds));
+              if (process.env.DATABASE_URL) void postgresStore.addGroupId(event.source.groupId);
               console.log(`LINE group joined: ${event.source.groupId}`);
             } else if (event.type === 'leave' && event.source?.type === 'group' && event.source.groupId) {
               groupIds.delete(event.source.groupId);
               saveGroupIds(groupFile, Array.from(groupIds));
+              if (process.env.DATABASE_URL) void postgresStore.removeGroupId(event.source.groupId);
               console.log(`LINE group left: ${event.source.groupId}`);
             }
           }
@@ -224,11 +234,23 @@ function startReader() {
   connect();
 }
 
-try {
-  validateConfig();
-  startWebhookServer();
-  startReader();
-} catch (error) {
-  console.error(error.message);
-  process.exitCode = 1;
+async function bootstrap() {
+  try {
+    validateConfig();
+
+    if (process.env.DATABASE_URL) {
+      await postgresStore.initializeStore();
+      const persistedGroupIds = await postgresStore.loadGroupIds();
+      persistedGroupIds.forEach(groupId => groupIds.add(groupId));
+      console.log(`Loaded ${persistedGroupIds.length} persisted LINE group(s) from PostgreSQL`);
+    }
+
+    startWebhookServer();
+    startReader();
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
 }
+
+void bootstrap();
