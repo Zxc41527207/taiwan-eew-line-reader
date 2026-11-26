@@ -1,17 +1,22 @@
 require('dotenv').config();
+
+const http = require('http');
 const { WebSocket } = require('ws');
 const { formatLineMessage, getEventKey, parseTaiwanEew } = require('./eew');
 
 const websocketUrl = process.env.WEBSOCKET_URL || 'wss://rptes.com:443/ws/';
 const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 const lineTo = process.env.LINE_TO;
+const maxReconnectDelayMs = 30000;
+const maxRememberedEvents = 1000;
 const sentEvents = new Set();
 const eventsBeingSent = new Set();
 
 function validateConfig() {
   if (!channelAccessToken) throw new Error('LINE_CHANNEL_ACCESS_TOKEN is required');
   if (!lineTo) throw new Error('LINE_TO is required');
-  if (new URL(websocketUrl).protocol !== 'wss:') throw new Error('WEBSOCKET_URL must use wss://');
+  const parsedUrl = new URL(websocketUrl);
+  if (parsedUrl.protocol !== 'wss:') throw new Error('WEBSOCKET_URL must use wss://');
 }
 
 async function pushLineMessage(text) {
@@ -39,12 +44,12 @@ async function pushLineMessage(text) {
 
 function rememberEvent(key) {
   sentEvents.add(key);
-  if (sentEvents.size > 1000) sentEvents.delete(sentEvents.values().next().value);
+  if (sentEvents.size > maxRememberedEvents) sentEvents.delete(sentEvents.values().next().value);
 }
 
 async function handleMessage(rawData) {
   let packet;
-  try { packet = JSON.parse(rawData.toString()); } catch { return; }
+  try { packet = JSON.parse(rawData.toString()); } catch { console.warn('Skipped a non-JSON WebSocket message'); return; }
   const eew = parseTaiwanEew(packet);
   if (!eew) return;
   const eventKey = getEventKey(eew);
@@ -61,6 +66,36 @@ async function handleMessage(rawData) {
   }
 }
 
+function startWebhookServer() {
+  const port = Number(process.env.PORT) || 3000;
+  const server = http.createServer((request, response) => {
+    if (request.method === 'GET' && request.url === '/') {
+      response.writeHead(200, { 'Content-Type': 'text/plain' });
+      response.end('Taiwan EEW LINE reader is running');
+      return;
+    }
+    if (request.method === 'POST' && request.url === '/webhook') {
+      let body = '';
+      request.setEncoding('utf8');
+      request.on('data', chunk => { body += chunk; });
+      request.on('end', () => {
+        try {
+          const payload = JSON.parse(body);
+          for (const event of payload.events || []) {
+            if (event.source?.type === 'group') console.log(`LINE group ID: ${event.source.groupId}`);
+          }
+        } catch (error) { console.error('Invalid LINE webhook payload:', error.message); }
+        response.writeHead(200);
+        response.end();
+      });
+      return;
+    }
+    response.writeHead(404);
+    response.end();
+  });
+  server.listen(port, '0.0.0.0', () => console.log(`HTTP server listening on port ${port}`));
+}
+
 function startReader() {
   let reconnectDelayMs = 1000;
   let stopping = false;
@@ -71,14 +106,14 @@ function startReader() {
     console.log(`Connecting to ${websocketUrl}`);
     const socket = new WebSocket(websocketUrl);
     activeSocket = socket;
-    socket.on('open', () => { reconnectDelayMs = 1000; console.log('WebSocket connected'); });
+    socket.on('open', () => { reconnectDelayMs = 1000; console.log('WebSocket connected; waiting for pushed messages'); });
     socket.on('message', data => { void handleMessage(data); });
     socket.on('error', error => console.error('WebSocket error:', error.message));
     socket.on('close', (code, reason) => {
       console.warn(`WebSocket closed (${code}): ${reason.toString() || 'no reason'}`);
       if (stopping) return;
       reconnectTimer = setTimeout(connect, reconnectDelayMs);
-      reconnectDelayMs = Math.min(reconnectDelayMs * 2, 30000);
+      reconnectDelayMs = Math.min(reconnectDelayMs * 2, maxReconnectDelayMs);
     });
   };
   const shutdown = () => { stopping = true; clearTimeout(reconnectTimer); activeSocket?.close(1000, 'Worker shutting down'); };
@@ -87,4 +122,4 @@ function startReader() {
   connect();
 }
 
-try { validateConfig(); startReader(); } catch (error) { console.error(error.message); process.exitCode = 1; }
+try { validateConfig(); startWebhookServer(); startReader(); } catch (error) { console.error(error.message); process.exitCode = 1; }
