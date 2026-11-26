@@ -205,6 +205,7 @@ function startReader() {
     let apiUrl;
     let fallbackMode = false;
     let lastInitializationRetryAt = 0;
+    let deniedCount = 0;
     console.log(`Using TWEarthquake API for ${locationCode}; polling every ${pollIntervalMs} ms`);
 
     while (!stopping) {
@@ -228,13 +229,21 @@ function startReader() {
           headers: createApiHeaders(),
           signal: AbortSignal.timeout(requestTimeoutMs)
         });
-        if (!response.ok) throw new Error(`EEW API returned ${response.status}`);
+        if (!response.ok) {
+          if (response.status === 403 || response.status === 429) deniedCount += 1;
+          throw new Error(`EEW API returned ${response.status}`);
+        }
+        deniedCount = 0;
         await handleApiResponse(await response.json());
       } catch (error) {
         console.error('TWEarthquake polling error:', error.message);
       }
 
       let delay = Math.max(0, pollIntervalMs - (Date.now() - requestStartedAt));
+      if (deniedCount > 0) {
+        const backoffSeconds = Math.min(30, 2 * 2 ** Math.min(deniedCount - 1, 4));
+        delay = backoffSeconds * 1_000;
+      }
       if (!stopping && delay > 0) {
         await new Promise(resolve => setTimeout(resolve, delay));
       }
