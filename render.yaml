@@ -9,5 +9,3 @@ services:
         value: wss://rptes.com:443/ws/
       - key: LINE_CHANNEL_ACCESS_TOKEN
         sync: false
-      - key: LINE_TO
-        sync: false

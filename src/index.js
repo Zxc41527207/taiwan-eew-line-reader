@@ -11,14 +11,12 @@ const {
 const websocketUrl = process.env.WEBSOCKET_URL || 'wss://rptes.com:443/ws/';
 const maxReconnectDelayMs = 30_000;
 const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
-const lineTo = process.env.LINE_TO;
 const maxRememberedEvents = 1_000;
 const sentEvents = new Set();
 const eventsBeingSent = new Set();
 
 function validateConfig() {
   if (!channelAccessToken) throw new Error('LINE_CHANNEL_ACCESS_TOKEN is required');
-  if (!lineTo) throw new Error('LINE_TO is required');
 
   const parsedUrl = new URL(websocketUrl);
   if (parsedUrl.protocol !== 'wss:') {
@@ -31,14 +29,13 @@ async function pushLineMessage(text) {
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      const response = await fetch('https://api.line.me/v2/bot/message/push', {
+      const response = await fetch('https://api.line.me/v2/bot/message/broadcast', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${channelAccessToken}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          to: lineTo,
           messages: [{ type: 'text', text }]
         }),
         signal: AbortSignal.timeout(10_000)
